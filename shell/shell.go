@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -12,6 +13,7 @@ import (
 // Shell structure
 type Shell struct {
 	backgroundProcesses sync.WaitGroup
+	currentDirectory    string
 }
 
 // Run the shell
@@ -19,8 +21,19 @@ func (s *Shell) Run() {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		fmt.Print(">>> ")
-		scanner.Scan()
+		fmt.Printf("Current Directory: %s >>> ", s.currentDirectory)
+		if !scanner.Scan() {
+			// Check for EOF (Ctrl+D) or an error
+			if scanner.Err() != nil {
+				fmt.Println("Error reading input:", scanner.Err())
+			}
+
+			// If Ctrl+D is pressed without any input, exit the shell
+			if len(scanner.Text()) == 0 {
+				break
+			}
+		}
+
 		input := scanner.Text()
 
 		if input == "exit" {
@@ -28,8 +41,28 @@ func (s *Shell) Run() {
 			s.backgroundProcesses.Wait()
 			break
 		}
+		if input == "newshell" {
+			// Wait for background processes to complete before exiting
+			s.startNewShell()
+			break
+		}
 
 		go s.executeCommand(input)
+	}
+}
+
+// Start a new shell
+func (s *Shell) startNewShell() {
+	// You can use os/exec to start a new shell process
+	cmd := exec.Command(os.Args[0]) // Restart the current program
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Error starting new shell:", err)
 	}
 }
 
@@ -48,6 +81,40 @@ func (s *Shell) executeCommand(input string) {
 	if len(args) == 0 {
 		return // Skip execution and continue with the next iteration of the loop
 	}
+
+	// Check for piping
+	var pipeIndex int
+	for i, arg := range args {
+		if arg == "|" {
+			pipeIndex = i
+			break
+		}
+	}
+
+	if pipeIndex > 0 && pipeIndex < len(args)-1 {
+		s.runPipedCommands(args, pipeIndex)
+		return
+	}
+
+	// Check for output redirection
+	var outputRedirectionIndex int
+	for i, arg := range args {
+		if arg == ">" {
+			outputRedirectionIndex = i
+			break
+		}
+	}
+
+	if outputRedirectionIndex > 0 && outputRedirectionIndex < len(args)-1 {
+		s.runCommandWithOutputRedirection(args, outputRedirectionIndex)
+		return
+	}
+
+	if args[0] == "cd" {
+		s.changeDirectory(args[1:])
+		return
+	}
+
 	cmd := exec.Command(args[0], args[1:]...)
 
 	// Redirect input, output, and error streams
@@ -73,6 +140,94 @@ func (s *Shell) executeCommand(input string) {
 			fmt.Println("Error:", err)
 		}
 	}
+}
+
+// Run piped commands
+func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
+	cmd1 := exec.Command(args[0], args[1:pipeIndex]...)
+	cmd2 := exec.Command(args[pipeIndex+1], args[pipeIndex+2:]...)
+
+	// Create a pipe to connect the output of cmd1 to the input of cmd2
+	pipeReader, pipeWriter := io.Pipe()
+	cmd1.Stdout = pipeWriter
+	cmd2.Stdin = pipeReader
+
+	// Redirect output and error streams
+	cmd1.Stderr = os.Stderr
+	cmd2.Stdout = os.Stdout
+	cmd2.Stderr = os.Stderr
+
+	// Use a WaitGroup to wait for both commands to complete
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Start cmd1
+	go func() {
+		defer wg.Done()
+		if err := cmd1.Start(); err != nil {
+			fmt.Println("Error starting command:", err)
+			return
+		}
+		// Close the writer end of the pipe after starting cmd1
+		pipeWriter.Close()
+	}()
+
+	// Start cmd2
+	go func() {
+		defer wg.Done()
+		if err := cmd2.Run(); err != nil {
+			fmt.Println("Error running command:", err)
+		}
+	}()
+
+	// Wait for both commands to complete
+	wg.Wait()
+}
+
+// Run command with output redirection
+func (s *Shell) runCommandWithOutputRedirection(args []string, outputRedirectionIndex int) {
+	cmd := exec.Command(args[0], args[1:outputRedirectionIndex]...)
+
+	// Open a file for writing (create or overwrite)
+	outputFile, err := os.Create(args[outputRedirectionIndex+1])
+	if err != nil {
+		fmt.Println("Error creating output file:", err)
+		return
+	}
+	defer outputFile.Close()
+
+	// Redirect output and error streams to the file
+	cmd.Stdout = outputFile
+	cmd.Stderr = os.Stderr
+
+	// Start the command and wait for it to complete
+	if err := cmd.Run(); err != nil {
+		fmt.Println("Error running command:", err)
+		return
+	}
+}
+
+// Change current directory
+func (s *Shell) changeDirectory(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: cd <directory>")
+		return
+	}
+
+	dir := args[0]
+	err := os.Chdir(dir)
+	if err != nil {
+		fmt.Println("Error changing directory:", err)
+		return
+	}
+
+	s.currentDirectory, err = os.Getwd()
+	if err != nil {
+		fmt.Println("Error getting working directory:", err)
+		return
+	}
+
+	fmt.Println("Changed directory to:", s.currentDirectory)
 }
 
 func main() {
