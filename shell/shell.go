@@ -1,71 +1,55 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
-	// "github.com/chzyer/readline"
+
+	"github.com/chzyer/readline"
 )
 
 // Shell structure
 type Shell struct {
 	backgroundProcesses sync.WaitGroup
 	currentDirectory    string
-	// rl                  *readline.Instance
 }
 
 // Run the shell
 func (s *Shell) Run() {
-	scanner := bufio.NewScanner(os.Stdin)
-	// rl, err := readline.New("> ")
-	// if err != nil {
-	// 	fmt.Println("Error creating readline instance:", err)
-	// 	return
-	// }
-	// defer rl.Close()
-	// s.rl = rl
+	rl, err := readline.New(">> ")
+	if err != nil {
+		fmt.Println("Error creating readline instance:", err)
+		return
+	}
+	defer rl.Close()
 
 	for {
-		fmt.Printf("%s >>> ", s.currentDirectory)
-		if !scanner.Scan() {
-			// Check for EOF (Ctrl+D) or an error
-			if scanner.Err() != nil {
-				fmt.Println("Error reading input:", scanner.Err())
-			}
-
-			// If Ctrl+D is pressed without any input, exit the shell
-			if len(scanner.Text()) == 0 {
-				break
-			}
+		line, err := rl.Readline()
+		if err != nil {
+			fmt.Println("Error reading input:", err)
+			break
 		}
-		input := scanner.Text()
-		// line, err := rl.Readline()
-		// if err != nil {
-		// 	if err == readline.ErrInterrupt {
-		// 		fmt.Println("Interrupted")
-		// 		break
-		// 	}
-		// 	fmt.Println("Error reading input:", err)
-		// 	break
-		// }
 
-		// input := strings.TrimSpace(line)
+		input := strings.TrimSpace(line)
+		fmt.Println(input)
 		if input == "exit" {
 			// Wait for background processes to complete before exiting
 			s.backgroundProcesses.Wait()
 			break
 		}
 		if input == "newshell" {
-			// Wait for background processes to complete before exiting
+			// Wait for background processes to complete before starting a new shell
+			s.backgroundProcesses.Wait()
 			s.startNewShell()
 			break
 		}
 
-		go s.executeCommand(input)
+		// Execute command synchronously to ensure proper input handling
+		input = strings.ReplaceAll(input, "'", "")
+		s.executeCommand(input)
 	}
 }
 
@@ -88,7 +72,6 @@ func (s *Shell) startNewShell() {
 func (s *Shell) executeCommand(input string) {
 	// Split input into command and arguments
 	args := strings.Fields(input)
-
 	// Check if the last argument is "&" for background execution
 	background := false
 	if len(args) > 0 && args[len(args)-1] == "&" {
@@ -294,3 +277,4 @@ func main() {
 }
 
 // run go files
+// escape characters in the shells
