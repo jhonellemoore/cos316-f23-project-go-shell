@@ -30,7 +30,7 @@ func (s *Shell) Run() {
 	// s.rl = rl
 
 	for {
-		fmt.Printf("Current Directory: %s >>> ", s.currentDirectory)
+		fmt.Printf("%s >>> ", s.currentDirectory)
 		if !scanner.Scan() {
 			// Check for EOF (Ctrl+D) or an error
 			if scanner.Err() != nil {
@@ -160,7 +160,48 @@ func (s *Shell) executeCommand(input string) {
 	}
 }
 
-// Run piped commands
+// // Run piped commands
+// func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
+// 	cmd1 := exec.Command(args[0], args[1:pipeIndex]...)
+// 	cmd2 := exec.Command(args[pipeIndex+1], args[pipeIndex+2:]...)
+
+// 	// Create a pipe to connect the output of cmd1 to the input of cmd2
+// 	pipeReader, pipeWriter := io.Pipe()
+// 	cmd1.Stdout = pipeWriter
+// 	cmd2.Stdin = pipeReader
+
+// 	// Redirect output and error streams
+// 	cmd1.Stderr = os.Stderr
+// 	cmd2.Stdout = os.Stdout
+// 	cmd2.Stderr = os.Stderr
+
+// 	// Use a WaitGroup to wait for both commands to complete
+// 	var wg sync.WaitGroup
+// 	wg.Add(2)
+
+// 	// Start cmd1
+// 	go func() {
+// 		defer wg.Done()
+// 		if err := cmd1.Start(); err != nil {
+// 			fmt.Println("Error starting command:", err)
+// 			return
+// 		}
+// 		// Close the writer end of the pipe after starting cmd1
+// 		pipeWriter.Close()
+// 	}()
+
+// 	// Start cmd2
+// 	go func() {
+// 		defer wg.Done()
+// 		if err := cmd2.Run(); err != nil {
+// 			fmt.Println("Error running command:", err)
+// 		}
+// 	}()
+
+// 	// Wait for both commands to complete
+// 	wg.Wait()
+// }
+
 func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
 	cmd1 := exec.Command(args[0], args[1:pipeIndex]...)
 	cmd2 := exec.Command(args[pipeIndex+1], args[pipeIndex+2:]...)
@@ -182,11 +223,10 @@ func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
 	// Start cmd1
 	go func() {
 		defer wg.Done()
-		if err := cmd1.Start(); err != nil {
-			fmt.Println("Error starting command:", err)
-			return
+		if err := cmd1.Run(); err != nil {
+			fmt.Println("Error running command:", err)
 		}
-		// Close the writer end of the pipe after starting cmd1
+		// Close the writer end of the pipe after cmd1 completes
 		pipeWriter.Close()
 	}()
 
@@ -252,3 +292,5 @@ func main() {
 	shell := &Shell{}
 	shell.Run()
 }
+
+// run go files
