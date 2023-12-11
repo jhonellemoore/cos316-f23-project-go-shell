@@ -5,8 +5,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/chzyer/readline"
 )
@@ -19,6 +21,35 @@ type Shell struct {
 
 // Run the shell
 func (s *Shell) Run() {
+	// Set up signal handling
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTSTP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGHUP)
+
+	// Set up a channel to notify when a command is completed
+	cmdCompleteChan := make(chan bool)
+
+	// Handle signals asynchronously
+	go func() {
+		for {
+			sig := <-sigChan
+			switch sig {
+			case syscall.SIGINT:
+				fmt.Println("\nReceived SIGINT. Press Enter to continue.")
+			case syscall.SIGTSTP:
+				fmt.Println("\nReceived SIGTSTP. Press Enter to continue.")
+			case syscall.SIGQUIT:
+				fmt.Println("\nReceived SIGQUIT.")
+				// Handle SIGQUIT (e.g., cleanup, graceful exit)
+			case syscall.SIGTERM:
+				fmt.Println("\nReceived SIGTERM.")
+				// Handle SIGTERM (e.g., cleanup, graceful exit)
+			case syscall.SIGHUP:
+				fmt.Println("\nReceived SIGHUP.")
+				// Handle SIGHUP (e.g., configuration reload)
+			}
+		}
+	}()
+
 	rl, err := readline.New(">> ")
 	if err != nil {
 		fmt.Println("Error creating readline instance:", err)
@@ -49,7 +80,33 @@ func (s *Shell) Run() {
 
 		// Execute command synchronously to ensure proper input handling
 		input = strings.ReplaceAll(input, "'", "")
-		s.executeCommand(input)
+		go func() {
+			s.executeCommand(input)
+			// Notify that the command is completed
+			cmdCompleteChan <- true
+		}()
+
+		// Wait for the command to complete or for a signal to be received
+		select {
+		case <-cmdCompleteChan:
+			// Continue to the next iteration
+		case sig := <-sigChan:
+			// Handle signals received while waiting for the command to complete
+			switch sig {
+			case syscall.SIGINT:
+				fmt.Println("\nReceived SIGINT during command execution.")
+			case syscall.SIGTSTP:
+				fmt.Println("\nReceived SIGTSTP during command execution.")
+			case syscall.SIGQUIT:
+				fmt.Println("\nReceived SIGQUIT during command execution.")
+			case syscall.SIGTERM:
+				fmt.Println("\nReceived SIGTERM during command execution.")
+			case syscall.SIGHUP:
+				fmt.Println("\nReceived SIGHUP during command execution.")
+			}
+			// Wait for the command to complete before continuing
+			<-cmdCompleteChan
+		}
 	}
 }
 
@@ -72,6 +129,7 @@ func (s *Shell) startNewShell() {
 func (s *Shell) executeCommand(input string) {
 	// Split input into command and arguments
 	args := strings.Fields(input)
+
 	// Check if the last argument is "&" for background execution
 	background := false
 	if len(args) > 0 && args[len(args)-1] == "&" {
@@ -126,14 +184,18 @@ func (s *Shell) executeCommand(input string) {
 	if background {
 		// If background execution, increment the counter and start a new goroutine
 		s.backgroundProcesses.Add(1)
-		go func() {
+		go func(cmd *exec.Cmd) { // Capture cmd variable
 			defer s.backgroundProcesses.Done()
 			err := cmd.Run()
 			if err != nil {
 				fmt.Println("Error:", err)
 			}
-		}()
-		fmt.Println("Background process started:", cmd.Process.Pid)
+		}(cmd)
+		if cmd.Process != nil {
+			fmt.Println("Background process started:", cmd.Process.Pid)
+		} else {
+			fmt.Println("Background process started.")
+		}
 	} else {
 		// If foreground execution, wait for the command to complete
 		err := cmd.Run()
@@ -142,48 +204,6 @@ func (s *Shell) executeCommand(input string) {
 		}
 	}
 }
-
-// // Run piped commands
-// func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
-// 	cmd1 := exec.Command(args[0], args[1:pipeIndex]...)
-// 	cmd2 := exec.Command(args[pipeIndex+1], args[pipeIndex+2:]...)
-
-// 	// Create a pipe to connect the output of cmd1 to the input of cmd2
-// 	pipeReader, pipeWriter := io.Pipe()
-// 	cmd1.Stdout = pipeWriter
-// 	cmd2.Stdin = pipeReader
-
-// 	// Redirect output and error streams
-// 	cmd1.Stderr = os.Stderr
-// 	cmd2.Stdout = os.Stdout
-// 	cmd2.Stderr = os.Stderr
-
-// 	// Use a WaitGroup to wait for both commands to complete
-// 	var wg sync.WaitGroup
-// 	wg.Add(2)
-
-// 	// Start cmd1
-// 	go func() {
-// 		defer wg.Done()
-// 		if err := cmd1.Start(); err != nil {
-// 			fmt.Println("Error starting command:", err)
-// 			return
-// 		}
-// 		// Close the writer end of the pipe after starting cmd1
-// 		pipeWriter.Close()
-// 	}()
-
-// 	// Start cmd2
-// 	go func() {
-// 		defer wg.Done()
-// 		if err := cmd2.Run(); err != nil {
-// 			fmt.Println("Error running command:", err)
-// 		}
-// 	}()
-
-// 	// Wait for both commands to complete
-// 	wg.Wait()
-// }
 
 func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
 	cmd1 := exec.Command(args[0], args[1:pipeIndex]...)
@@ -275,6 +295,3 @@ func main() {
 	shell := &Shell{}
 	shell.Run()
 }
-
-// run go files
-// escape characters in the shells
