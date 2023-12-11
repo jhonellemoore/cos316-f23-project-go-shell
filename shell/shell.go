@@ -50,7 +50,11 @@ func (s *Shell) Run() {
 		}
 	}()
 
-	rl, err := readline.New(">> ")
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:       ">> ",
+		AutoComplete: getAutoComplete(),
+	})
+
 	if err != nil {
 		fmt.Println("Error creating readline instance:", err)
 		return
@@ -202,6 +206,35 @@ func (s *Shell) executeCommand(input string) {
 		if err != nil {
 			fmt.Println("Error:", err)
 		}
+	}
+}
+
+func getAutoComplete() readline.AutoCompleter {
+	completer := readline.NewPrefixCompleter(
+		readline.PcItem("newshell"),
+		readline.PcItem("exit"),
+		readline.PcItem("cd"),
+		readline.PcItem("your_custom_command_here"),
+		readline.PcItemDynamic(getDynamicCompleteFunc()), // Add this line for dynamic completion
+	)
+	return completer
+}
+
+func getDynamicCompleteFunc() readline.DynamicCompleteFunc {
+	return func(prefix string) []string {
+		files, err := os.ReadDir(".")
+		if err != nil {
+			fmt.Println("Error reading directory:", err)
+			return nil
+		}
+
+		var completions []string
+		for _, file := range files {
+			if strings.HasPrefix(file.Name(), prefix) {
+				completions = append(completions, file.Name())
+			}
+		}
+		return completions
 	}
 }
 
