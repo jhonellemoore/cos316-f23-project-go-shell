@@ -116,7 +116,7 @@ func (s *Shell) Run() {
 
 // Start a new shell
 func (s *Shell) startNewShell() {
-	// You can use os/exec to start a new shell process
+
 	cmd := exec.Command(os.Args[0]) // Restart the current program
 
 	cmd.Stdin = os.Stdin
