@@ -1,2 +1,10 @@
+<<<<<<< HEAD
 Hello, World
 Another line
+=======
+"This is a test"
+line 2
+line 3
+Hello, World
+o
+>>>>>>> 16d8375b7146949133086d497d811f9e9c31abac
