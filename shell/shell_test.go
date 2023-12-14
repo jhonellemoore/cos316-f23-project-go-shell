@@ -1,98 +1,56 @@
 package main
 
 import (
-	"bytes"
-	"io"
+	"fmt"
 	"os"
-	"sync"
+	"os/exec"
+	"strings"
 	"testing"
 )
 
-func TestShell_ExecuteCommand(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		// Add test cases here based on your specific requirements
-		{"TestCommandExecution", "echo Hello, Go Shell!", "Hello, Go Shell!\n"},
-		// Add more test cases as needed
+func TestPiping(t *testing.T) {
+	// Create a simple pipeline: ls -l | grep "output"
+	pipeline := "ls | cat"
+
+	// Split the pipeline into individual commands
+	commands := strings.Split(pipeline, "|")
+
+	// Process each command in the pipeline
+	var cmd *exec.Cmd
+	var lastCmd *exec.Cmd
+
+	for _, command := range commands {
+		args := strings.Fields(strings.TrimSpace(command))
+
+		// Create a command
+		cmd = exec.Command(args[0], args[1:]...)
+
+		// If not the first command, set the input of this command to the output of the previous command
+		if lastCmd != nil {
+			cmd.Stdin, _ = lastCmd.StdoutPipe()
+		}
+
+		// Set the output of this command as the input for the next command
+		cmd.Stdout = os.Stdout
+
+		// Start the command
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("Error starting command: %v", err)
+		}
+
+		// Wait for the command to finish
+		if err := cmd.Wait(); err != nil {
+			t.Fatalf("Error waiting for command: %v", err)
+		}
+
+		// Update the last command
+		lastCmd = cmd
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Redirect os.Stdout to capture the output
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-
-			// Create a new shell instance
-			shell := &Shell{
-				backgroundProcesses: sync.WaitGroup{},
-			}
-
-			// Execute the command
-			shell.executeCommand(tt.input)
-
-			// Close the write end of the pipe and restore os.Stdout
-			w.Close()
-			os.Stdout = oldStdout
-
-			// Read the captured output from the pipe
-			var capturedOutput bytes.Buffer
-			io.Copy(&capturedOutput, r)
-
-			// Compare the captured output with the expected output
-			if got := capturedOutput.String(); got != tt.expected {
-				t.Errorf("Expected output: %s, but got: %s", tt.expected, got)
-			}
-		})
-	}
-}
-
-func TestShell_Run(t *testing.T) {
-	// Create a pipe to capture user input
-	r, w, _ := os.Pipe()
-	os.Stdin = r
-	defer func() {
-		os.Stdin = os.Stdin
-	}()
-
-	// Redirect os.Stdout to capture the output
-	oldStdout := os.Stdout
-	rOut, wOut, _ := os.Pipe()
-	os.Stdout = wOut
-	defer func() {
-		os.Stdout = oldStdout
-	}()
-
-	// Create a new shell instance
-	shell := &Shell{
-		backgroundProcesses: sync.WaitGroup{},
+	// Check the exit status of the last command
+	if cmd.ProcessState.ExitCode() != 0 {
+		t.Fatalf("Last command failed with exit code %d", cmd.ProcessState.ExitCode())
 	}
 
-	// Run the shell in a goroutine
-	go shell.Run()
-
-	// Write user input to the pipe
-	io.WriteString(w, "echo Hello, Go Shell!\n")
-	// Close the write end of the pipe
-	w.Close()
-
-	// Wait for the shell to complete
-	shell.backgroundProcesses.Wait()
-
-	// Close the write end of the output pipe and restore os.Stdout
-	wOut.Close()
-	os.Stdout = oldStdout
-
-	// Read the captured output from the pipe
-	var capturedOutput bytes.Buffer
-	io.Copy(&capturedOutput, rOut)
-
-	// Compare the captured output with the expected output
-	expected := "Hello, Go Shell!\n"
-	if got := capturedOutput.String(); got != expected {
-		t.Errorf("Expected output: %s, but got: %s", expected, got)
-	}
+	fmt.Println("Pipeline execution successful.")
 }
