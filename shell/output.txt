@@ -1,1 +1,13 @@
-
+binary
+file1
+go.mod
+go.sum
+ls
+output.txt
+output1.txt
+output2.txt
+shell.go
+shell_test.go
+test1
+test_directory
+test_file_1.txt
