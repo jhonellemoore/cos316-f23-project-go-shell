@@ -169,7 +169,7 @@ func (s *Shell) executeCommand(input string) {
 	}
 
 	if outputRedirectionIndex > 0 && outputRedirectionIndex < len(args)-1 {
-		s.runCommandWithOutputRedirection(args, outputRedirectionIndex)
+		s.runCommandWithOutputRedirection(args)
 		return
 	}
 
@@ -279,13 +279,131 @@ func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
 }
 
 // Run command with output redirection
-func (s *Shell) runCommandWithOutputRedirection(args []string, outputRedirectionIndex int) {
-	cmd := exec.Command(args[0], args[1:outputRedirectionIndex]...)
+// func (s *Shell) runCommandWithOutputRedirection(args []string, outputRedirectionIndex int) {
+// 	// Separate the command and its arguments
+// 	cmd := exec.Command(args[0], args[1:outputRedirectionIndex]...)
 
-	// Open a file for writing (create or overwrite)
-	outputFile, err := os.Create(args[outputRedirectionIndex+1])
+// 	// Open a file for writing (create or overwrite)
+// 	outputFile, err := os.Create(args[outputRedirectionIndex+1])
+// 	if err != nil {
+// 		fmt.Println("Error creating output file:", err)
+// 		return
+// 	}
+// 	defer outputFile.Close()
+
+// 	// Redirect output and error streams to the file
+// 	cmd.Stdout = outputFile
+// 	cmd.Stderr = os.Stderr
+
+// 	// Start the command and wait for it to complete
+// 	if err := cmd.Run(); err != nil {
+// 		fmt.Println("Error running command:", err)
+// 		return
+// 	}
+// }
+
+// func (s *Shell) runCommandWithOutputRedirection(command string, args ...string) {
+// 	cmd := exec.Command(command, args...)
+
+// 	// Redirect output and error streams to os.Stderr
+// 	cmd.Stdout = os.Stderr
+// 	cmd.Stderr = os.Stderr
+
+// 	// Start the command and wait for it to complete
+// 	if err := cmd.Run(); err != nil {
+// 		fmt.Println("Error running command:", err)
+// 		return
+// 	}
+// }
+
+func (s *Shell) runCommandWithOutputRedirection(args []string) {
+	// Find all indices of redirection operators
+	var redirectionIndices []int
+	for i, arg := range args {
+		if arg == ">" || arg == ">>" {
+			redirectionIndices = append(redirectionIndices, i)
+		}
+	}
+
+	// No redirection found
+	if len(redirectionIndices) == 0 {
+		fmt.Println("No redirection operator found.")
+		return
+	}
+
+	// Handle the case where there are multiple redirections
+	if len(redirectionIndices) > 1 {
+		// Process each redirection separately
+		for i := 0; i < len(redirectionIndices); i++ {
+			start := redirectionIndices[i]
+
+			// Get the command and arguments up to the redirection operator
+			var cmdArgs []string
+			if i == 0 {
+				cmdArgs = args[:start]
+			} else {
+				cmdArgs = args[redirectionIndices[i-1]+1 : start]
+			}
+
+			// Combine the command and its arguments into a single string
+			cmdString := strings.Join(cmdArgs, " ")
+
+			// Determine the output file and mode
+			outputRedirectionIndex := start
+			outputFileName := args[outputRedirectionIndex+1]
+			mode := os.O_WRONLY | os.O_CREATE
+			if args[outputRedirectionIndex] == ">>" {
+				mode |= os.O_APPEND
+			}
+
+			// Use bash to execute the command with shell features
+			cmd := exec.Command("bash", "-c", cmdString)
+
+			// Open a file for writing (create or append)
+			outputFile, err := os.OpenFile(outputFileName, mode, 0644)
+			if err != nil {
+				fmt.Println("Error opening output file:", err)
+				return
+			}
+			defer outputFile.Close()
+
+			// Redirect output and error streams to the file
+			cmd.Stdout = outputFile
+			cmd.Stderr = os.Stderr
+
+			// Start the command and wait for it to complete
+			if err := cmd.Run(); err != nil {
+				fmt.Println("Error running command:", err)
+				return
+			}
+		}
+
+		return
+	}
+
+	// Handle the case where there's only one redirection
+	outputRedirectionIndex := redirectionIndices[0]
+
+	// Get the command and arguments up to the redirection operator
+	cmdArgs := args[:outputRedirectionIndex]
+
+	// Combine the command and its arguments into a single string
+	cmdString := strings.Join(cmdArgs, " ")
+
+	// Determine the output file and mode
+	outputFileName := args[outputRedirectionIndex+1]
+	mode := os.O_WRONLY | os.O_CREATE
+	if args[outputRedirectionIndex] == ">>" {
+		mode |= os.O_APPEND
+	}
+
+	// Use bash to execute the command with shell features
+	cmd := exec.Command("bash", "-c", cmdString)
+
+	// Open a file for writing (create or append)
+	outputFile, err := os.OpenFile(outputFileName, mode, 0644)
 	if err != nil {
-		fmt.Println("Error creating output file:", err)
+		fmt.Println("Error opening output file:", err)
 		return
 	}
 	defer outputFile.Close()
