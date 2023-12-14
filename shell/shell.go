@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -116,7 +115,7 @@ func (s *Shell) Run() {
 
 // Start a new shell
 func (s *Shell) startNewShell() {
-	// You can use os/exec to start a new shell process
+
 	cmd := exec.Command(os.Args[0]) // Restart the current program
 
 	cmd.Stdin = os.Stdin
@@ -129,24 +128,24 @@ func (s *Shell) startNewShell() {
 	}
 }
 
-// Execute a command
 func (s *Shell) executeCommand(input string) {
-	// Split input into command and arguments
-	args := strings.Fields(input)
+	// Trim newline character from input
+	input = strings.TrimSuffix(input, "\n")
 
 	// Check if the last argument is "&" for background execution
 	background := false
-	if len(args) > 0 && args[len(args)-1] == "&" {
+	if strings.HasSuffix(input, "&") {
 		background = true
-		args = args[:len(args)-1] // Remove "&" from arguments
+		input = strings.TrimSuffix(input, "&") // Remove "&" from input
 	}
 
-	if len(args) == 0 {
+	if len(input) == 0 {
 		return // Skip execution and continue with the next iteration of the loop
 	}
 
 	// Check for piping
 	var pipeIndex int
+	args := strings.Fields(input)
 	for i, arg := range args {
 		if arg == "|" {
 			pipeIndex = i
@@ -178,12 +177,15 @@ func (s *Shell) executeCommand(input string) {
 		return
 	}
 
-	cmd := exec.Command(args[0], args[1:]...)
-
-	// Redirect input, output, and error streams
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var cmd *exec.Cmd
+	if background {
+		cmd = exec.Command("bash", "-c", input)
+	} else {
+		cmd = exec.Command("bash", "-c", input)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 
 	if background {
 		// If background execution, increment the counter and start a new goroutine
@@ -238,45 +240,69 @@ func getDynamicCompleteFunc() readline.DynamicCompleteFunc {
 	}
 }
 
+// Run piped commands
 func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
-	cmd1 := exec.Command(args[0], args[1:pipeIndex]...)
-	cmd2 := exec.Command(args[pipeIndex+1], args[pipeIndex+2:]...)
+	// Join the first part of the command
+	cmd1 := strings.Join(args[:pipeIndex], " ")
 
-	// Create a pipe to connect the output of cmd1 to the input of cmd2
-	pipeReader, pipeWriter := io.Pipe()
-	cmd1.Stdout = pipeWriter
-	cmd2.Stdin = pipeReader
+	// Join the second part of the command
+	cmd2 := strings.Join(args[pipeIndex+1:], " ")
+
+	// Use bash to interpret the commands correctly
+	cmd := exec.Command("bash", "-c", cmd1+" | "+cmd2)
 
 	// Redirect output and error streams
-	cmd1.Stderr = os.Stderr
-	cmd2.Stdout = os.Stdout
-	cmd2.Stderr = os.Stderr
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
 
-	// Use a WaitGroup to wait for both commands to complete
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// Start cmd1
-	go func() {
-		defer wg.Done()
-		if err := cmd1.Run(); err != nil {
-			fmt.Println("Error running command:", err)
-		}
-		// Close the writer end of the pipe after cmd1 completes
-		pipeWriter.Close()
-	}()
-
-	// Start cmd2
-	go func() {
-		defer wg.Done()
-		if err := cmd2.Run(); err != nil {
-			fmt.Println("Error running command:", err)
-		}
-	}()
-
-	// Wait for both commands to complete
-	wg.Wait()
+	// Start the command and wait for it to complete
+	if err := cmd.Run(); err != nil {
+		fmt.Println("Error running piped commands:", err)
+		return
+	}
 }
+
+// // Run piped commands
+// func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
+// 	// Split the command into two parts
+// 	cmd1 := exec.Command(args[0], args[1:pipeIndex]...)
+// 	cmd2 := exec.Command(args[pipeIndex+1], args[pipeIndex+2:]...)
+
+// 	// Create a pipe to connect the output of cmd1 to the input of cmd2
+// 	pipeReader, pipeWriter := io.Pipe()
+// 	cmd1.Stdout = pipeWriter
+// 	cmd2.Stdin = pipeReader
+
+// 	// Redirect output and error streams
+// 	cmd1.Stderr = os.Stderr
+// 	cmd2.Stdout = os.Stdout
+// 	cmd2.Stderr = os.Stderr
+
+// 	// Use a WaitGroup to wait for both commands to complete
+// 	var wg sync.WaitGroup
+// 	wg.Add(2)
+
+// 	// Start cmd1
+// 	go func() {
+// 		defer wg.Done()
+// 		if err := cmd1.Run(); err != nil {
+// 			fmt.Println("Error running command 1:", err)
+// 		}
+// 		// Close the writer end of the pipe after cmd1 completes
+// 		pipeWriter.Close()
+// 	}()
+
+// 	// Start cmd2
+// 	go func() {
+// 		defer wg.Done()
+// 		if err := cmd2.Run(); err != nil {
+// 			fmt.Println("Error running command 2:", err)
+// 		}
+// 	}()
+
+// 	// Wait for both commands to complete
+// 	wg.Wait()
+// }
 
 // Run command with output redirection
 // func (s *Shell) runCommandWithOutputRedirection(args []string, outputRedirectionIndex int) {
