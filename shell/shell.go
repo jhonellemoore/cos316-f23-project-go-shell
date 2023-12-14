@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-
 	"github.com/chzyer/readline"
 )
 
@@ -143,70 +142,52 @@ func (s *Shell) executeCommand(input string) {
 		return // Skip execution and continue with the next iteration of the loop
 	}
 
-	// Check for piping
-	var pipeIndex int
-	args := strings.Fields(input)
-	for i, arg := range args {
-		if arg == "|" {
-			pipeIndex = i
-			break
-		}
-	}
+	// Split the input into individual commands
+	commands := strings.Split(input, "|")
 
-	if pipeIndex > 0 && pipeIndex < len(args)-1 {
-		s.runPipedCommands(args, pipeIndex)
-		return
-	}
-
-	// Check for output redirection
-	var outputRedirectionIndex int
-	for i, arg := range args {
-		if arg == ">" {
-			outputRedirectionIndex = i
-			break
-		}
-	}
-
-	if outputRedirectionIndex > 0 && outputRedirectionIndex < len(args)-1 {
-		s.runCommandWithOutputRedirection(args, outputRedirectionIndex)
-		return
-	}
-
-	if args[0] == "cd" {
-		s.changeDirectory(args[1:])
-		return
-	}
-
+	// Process each command in the pipeline
 	var cmd *exec.Cmd
-	if background {
-		cmd = exec.Command("bash", "-c", input)
-	} else {
-		cmd = exec.Command("bash", "-c", input)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	}
+	for _, command := range commands {
+		args := strings.Fields(strings.TrimSpace(command))
 
-	if background {
-		// If background execution, increment the counter and start a new goroutine
-		s.backgroundProcesses.Add(1)
-		go func(cmd *exec.Cmd) { // Capture cmd variable
-			defer s.backgroundProcesses.Done()
+		// Check for output redirection
+		s.runCommandWithOutputRedirection(args)
+
+		if args[0] == "cd" {
+			s.changeDirectory(args[1:])
+			return
+		}
+
+		if background {
+			cmd = exec.Command("bash", "-c", command)
+		} else {
+			cmd = exec.Command("bash", "-c", command)
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
+
+		if background {
+			// If background execution, increment the counter and start a new goroutine
+			s.backgroundProcesses.Add(1)
+			go func(cmd *exec.Cmd) {
+				defer s.backgroundProcesses.Done()
+				err := cmd.Run()
+				if err != nil {
+					fmt.Println("Error:", err)
+				}
+			}(cmd)
+			if cmd.Process != nil {
+				fmt.Println("Background process started:", cmd.Process.Pid)
+			} else {
+				fmt.Println("Background process started.")
+			}
+		} else {
+			// If foreground execution, wait for the command to complete
 			err := cmd.Run()
 			if err != nil {
 				fmt.Println("Error:", err)
 			}
-		}(cmd)
-		if cmd.Process != nil {
-			fmt.Println("Background process started:", cmd.Process.Pid)
-		} else {
-			fmt.Println("Background process started.")
-		}
-	} else {
-		// If foreground execution, wait for the command to complete
-		err := cmd.Run()
-		if err != nil {
-			fmt.Println("Error:", err)
 		}
 	}
 }
@@ -241,15 +222,8 @@ func getDynamicCompleteFunc() readline.DynamicCompleteFunc {
 }
 
 // Run piped commands
-func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
-	// Join the first part of the command
-	cmd1 := strings.Join(args[:pipeIndex], " ")
-
-	// Join the second part of the command
-	cmd2 := strings.Join(args[pipeIndex+1:], " ")
-
-	// Use bash to interpret the commands correctly
-	cmd := exec.Command("bash", "-c", cmd1+" | "+cmd2)
+func (s *Shell) runPipedCommands(args []string) {
+	cmd := exec.Command("bash", "-c", strings.Join(args, " "))
 
 	// Redirect output and error streams
 	cmd.Stderr = os.Stderr
@@ -262,68 +236,51 @@ func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
 	}
 }
 
-// // Run piped commands
-// func (s *Shell) runPipedCommands(args []string, pipeIndex int) {
-// 	// Split the command into two parts
-// 	cmd1 := exec.Command(args[0], args[1:pipeIndex]...)
-// 	cmd2 := exec.Command(args[pipeIndex+1], args[pipeIndex+2:]...)
-
-// 	// Create a pipe to connect the output of cmd1 to the input of cmd2
-// 	pipeReader, pipeWriter := io.Pipe()
-// 	cmd1.Stdout = pipeWriter
-// 	cmd2.Stdin = pipeReader
-
-// 	// Redirect output and error streams
-// 	cmd1.Stderr = os.Stderr
-// 	cmd2.Stdout = os.Stdout
-// 	cmd2.Stderr = os.Stderr
-
-// 	// Use a WaitGroup to wait for both commands to complete
-// 	var wg sync.WaitGroup
-// 	wg.Add(2)
-
-// 	// Start cmd1
-// 	go func() {
-// 		defer wg.Done()
-// 		if err := cmd1.Run(); err != nil {
-// 			fmt.Println("Error running command 1:", err)
-// 		}
-// 		// Close the writer end of the pipe after cmd1 completes
-// 		pipeWriter.Close()
-// 	}()
-
-// 	// Start cmd2
-// 	go func() {
-// 		defer wg.Done()
-// 		if err := cmd2.Run(); err != nil {
-// 			fmt.Println("Error running command 2:", err)
-// 		}
-// 	}()
-
-// 	// Wait for both commands to complete
-// 	wg.Wait()
-// }
-
 // Run command with output redirection
-func (s *Shell) runCommandWithOutputRedirection(args []string, outputRedirectionIndex int) {
-	cmd := exec.Command(args[0], args[1:outputRedirectionIndex]...)
+func (s *Shell) runCommandWithOutputRedirection(args []string) {
+	var outputIndices []int
 
-	// Open a file for writing (create or overwrite)
-	outputFile, err := os.Create(args[outputRedirectionIndex+1])
-	if err != nil {
-		fmt.Println("Error creating output file:", err)
+	// Find all output redirection indices
+	for i, arg := range args {
+		if arg == ">" {
+			outputIndices = append(outputIndices, i)
+		}
+	}
+
+	if len(outputIndices) == 0 {
+		fmt.Println("Invalid output redirection syntax")
 		return
 	}
-	defer outputFile.Close()
 
-	// Redirect output and error streams to the file
-	cmd.Stdout = outputFile
-	cmd.Stderr = os.Stderr
+	// Iterate through each output redirection
+	for _, outputIndex := range outputIndices {
+		if outputIndex == 0 || outputIndex == len(args)-1 {
+			fmt.Println("Invalid output redirection syntax")
+			continue
+		}
 
-	// Start the command and wait for it to complete
-	if err := cmd.Run(); err != nil {
-		fmt.Println("Error running command:", err)
-		return
+		// Extract the command and the output file
+		cmdArgs := args[:outputIndex]
+		outputFile := args[outputIndex+1]
+
+		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+
+		// Open a file for writing (create or append)
+		outputFileHandle, err := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			fmt.Println("Error opening output file:", err)
+			continue
+		}
+		defer outputFileHandle.Close()
+
+		// Redirect output stream to the file
+		cmd.Stdout = outputFileHandle
+		cmd.Stderr = os.Stderr
+
+		// Start the command and wait for it to complete
+		if err := cmd.Run(); err != nil {
+			fmt.Println("Error running command:", err)
+		}
 	}
 }
 
