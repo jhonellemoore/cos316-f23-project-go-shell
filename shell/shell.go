@@ -189,13 +189,14 @@ func (s *Shell) executeCommand(input string) {
 	}
 
 	var cmd *exec.Cmd
+
 	if background {
-		cmd = exec.Command("bash", "-c", input)
-	} else {
 		cmd = exec.Command(args[0], args[1:]...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+	} else {
+		cmd = exec.Command("bash", "-c", input)
 	}
 
 	if background {

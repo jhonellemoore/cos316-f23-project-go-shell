@@ -4,3 +4,5 @@ dominoes
 zebra
 orange
 cat
+pattern 1
+pattern 2
