@@ -10,11 +10,5 @@ This is a repository for our implementation of our final project - a go shell
     `go run shell.go`
 
 ## Video Walkthrough
-<div>
-    <a href="https://www.loom.com/share/4aaab1df5ed444658d67ebdf69e8b336?sid=c60ade23-2ff2-4690-ae3d-3cecb798c394">
-    </a>
-    <a href="https://www.loom.com/share/4aaab1df5ed444658d67ebdf69e8b336?sid=c60ade23-2ff2-4690-ae3d-3cecb798c394">
-      <img style="max-width:300px;" src="https://www.loom.com/share/4aaab1df5ed444658d67ebdf69e8b336?sid=c60ade23-2ff2-4690-ae3d-3cecb798c394">
-    </a>
-  </div>
+<div style="position: relative; padding-bottom: 62.5%; height: 0;"><iframe src="https://www.loom.com/embed/4aaab1df5ed444658d67ebdf69e8b336?sid=dd4e835e-4bbe-4aed-afe9-a3eb959fe28f" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe></div>
   
